@@ -39,10 +39,9 @@ node('linux') {
         }
     }
 
-    // TODO(adam): enable when unit tests start passing
-    // stage('Test') {
-    //     sh 'make ci'
-    // }
+    stage('Build and test') {
+        sh 'make ci'
+    }
 
     stage('Build packages') {
         sh 'go get github.com/status-im/xgo'
