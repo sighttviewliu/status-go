@@ -27,6 +27,7 @@ endif
 
 CGO_CFLAGS = -I/$(JAVA_HOME)/include -I/$(JAVA_HOME)/include/darwin
 GOBIN = $(dir $(realpath $(firstword $(MAKEFILE_LIST))))build/bin
+GOLIB = $(dir $(realpath $(firstword $(MAKEFILE_LIST))))build/lib
 GIT_COMMIT = $(shell tag=`git describe --exact-match --tag 2>/dev/null`; \
 	if [ $$? -eq 0 ]; then echo $$tag | sed 's/^v\(.*\)$$/\1/'; \
 	else git rev-parse --short HEAD; fi)
@@ -103,40 +104,46 @@ node-canary: ##@build Build P2P node canary using status-go deps
 	go build -i -o $(GOBIN)/node-canary -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./cmd/node-canary/
 	@echo "Compilation done."
 
-statusgo-cross: statusgo-android statusgo-ios
+statusgo-cross: statusgo-linux statusgo-macos statusgo-android statusgo-ios
 	@echo "Full cross compilation done."
-	@ls -ld $(GOBIN)/statusgo-*
+	@ls -ld $(GOLIB)/statusgo-*
 
 statusgo-linux: xgo ##@cross-compile Build status-go for Linux
 	./_assets/patches/patcher -b . -p geth-xgo
-	$(GOPATH)/bin/xgo --image $(XGOIMAGE) --go=$(XGO_GO) -out statusgo --dest=$(GOBIN) --targets=linux/amd64 -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./cmd/statusd
+	$(GOPATH)/bin/xgo --image $(XGOIMAGE) --go=$(XGO_GO) -buildmode=c-archive -out statusgo --dest=$(GOLIB) --targets=linux/amd64 -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./lib
 	./_assets/patches/patcher -b . -p geth-xgo -r
-	@echo "Android cross compilation done."
+	@echo "Linux cross compilation done."
+
+statusgo-macos: xgo ##@cross-compile Build status-go for MacOS
+	./_assets/patches/patcher -b . -p geth-xgo
+	$(GOPATH)/bin/xgo --image $(XGOIMAGE) --go=$(XGO_GO) -buildmode=c-archive -out statusgo --dest=$(GOLIB) --targets=darwin/amd64 -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./lib
+	./_assets/patches/patcher -b . -p geth-xgo -r
+	@echo "MacOS cross compilation done."
 
 statusgo-android: xgo ##@cross-compile Build status-go for Android
 	./_assets/patches/patcher -b . -p geth-xgo
-	$(GOPATH)/bin/xgo --image $(XGOIMAGE) --go=$(XGO_GO) -out statusgo --dest=$(GOBIN) --targets=android-16/aar -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./lib
+	$(GOPATH)/bin/xgo --image $(XGOIMAGE) --go=$(XGO_GO) -out statusgo --dest=$(GOLIB) --targets=android-16/aar -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./lib
 	./_assets/patches/patcher -b . -p geth-xgo -r
 	@echo "Android cross compilation done."
 
 statusgo-ios: xgo	##@cross-compile Build status-go for iOS
 	./_assets/patches/patcher -b . -p geth-xgo
-	$(GOPATH)/bin/xgo --image $(XGOIMAGE) --go=$(XGO_GO) -out statusgo --dest=$(GOBIN) --targets=ios-9.3/framework -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./lib
+	$(GOPATH)/bin/xgo --image $(XGOIMAGE) --go=$(XGO_GO) -out statusgo --dest=$(GOLIB) --targets=ios-9.3/framework -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./lib
 	./_assets/patches/patcher -b . -p geth-xgo -r
 	@echo "iOS framework cross compilation done."
 
 statusgo-ios-simulator: xgo	##@cross-compile Build status-go for iOS Simulator
 	@docker pull $(XGOIMAGEIOSSIM)
 	./_assets/patches/patcher -b . -p geth-xgo
-	$(GOPATH)/bin/xgo --image $(XGOIMAGEIOSSIM) --go=$(XGO_GO) -out statusgo --dest=$(GOBIN) --targets=ios-9.3/framework -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./lib
+	$(GOPATH)/bin/xgo --image $(XGOIMAGEIOSSIM) --go=$(XGO_GO) -out statusgo --dest=$(GOLIB) --targets=ios-9.3/framework -v -tags '$(BUILD_TAGS)' $(BUILD_FLAGS) ./lib
 	./_assets/patches/patcher -b . -p geth-xgo -r
 	@echo "iOS framework cross compilation done."
 
 statusgo-library: ##@cross-compile Build status-go as static library for current platform
 	@echo "Building static library..."
-	go build -buildmode=c-archive -o $(GOBIN)/libstatus.a ./lib
+	go build -buildmode=c-archive -o $(GOLIB)/libstatus.a ./lib
 	@echo "Static library built:"
-	@ls -la $(GOBIN)/libstatus.*
+	@ls -la $(GOLIB)/libstatus.*
 
 docker-image: ##@docker Build docker image (use DOCKER_IMAGE_NAME to set the image name)
 	@echo "Building docker image..."
@@ -264,10 +271,10 @@ lint:
 ci: lint mock dep-ensure test-unit test-e2e ##@tests Run all linters and tests at once
 
 clean: ##@other Cleanup
-	rm -fr build/bin/*
+	rm -rf build/bin/* build/lib/*
 
 deep-clean: clean
-	rm -Rdf .ethereumtest/StatusChain
+	git clean -qdxf
 
 vendor-check: ##@dependencies Require all new patches and disallow other changes
 	./_assets/patches/patcher -c
