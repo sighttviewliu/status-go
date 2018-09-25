@@ -1,78 +1,80 @@
-#!/usr/bin/env groovy
+pipeline {
+  agent { label 'master' }
 
-@NonCPS
-def getVersion(branch, sha, buildNumber) {
-    version = branch.replaceAll(/\//, '-')
+  environment {
+    STATUS_GO_PATH = 'src/github.com/status-im/status-go'
+  }
 
-    if (sha?.trim()) {
-        version = version + '-g' + sha
-    }
+  options {
+    disableConcurrentBuilds()
+    /* necessary to make GOPATH work */
+    checkoutToSubdirectory("${env.STATUS_GO_PATH}")
+    /* manage how many builds we keep */
+    buildDiscarder(logRotator(
+      numToKeepStr: '20',
+      daysToKeepStr: '30',
+    ))
+  }
 
-    if (buildNumber?.trim()) {
-        version = version + '-' + buildNumber
-    }
-
-    return version
-}
-
-node('linux') {
-    checkout scm
-
-    def remoteOriginRegex = ~/^remotes\/origin\//
-
-    gitSHA = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
-    gitShortSHA = gitSHA.take(7)
-    gitBranch = sh(returnStdout: true, script: 'git name-rev --name-only HEAD').trim() - remoteOriginRegex
-
-    stage('Debug') {
+  stages {
+    stage('Prep') {
+      steps { script {
+        lib = load('_assets/ci/lib.groovy')
         sh 'env'
-        println(gitBranch)
-        println(gitSHA)
+        println("Git Branch: ${lib.gitBranch()}")
+        println("Git Commit: ${lib.gitCommit()}")
+      } }
     }
-
-    // TODO(adam): enable when unit tests start passing
-    // stage('Test') {
-    //     sh 'make ci'
-    // }
-
     stage('Build') {
-        sh 'go get github.com/status-im/xgo'
-
-        parallel (
-            'statusgo-android': {
-                sh 'make statusgo-android'
-            },
-            'statusgo-ios-simulator': {
-                sh '''
-                    make statusgo-ios-simulator
-                    cd build/bin/statusgo-ios-9.3-framework/
-                    zip -r status-go-ios.zip Statusgo.framework
-                '''
-            }
-        )
+      parallel {
+        stage('Linux') {
+          agent { label 'linux' }
+          environment {
+            GOPATH = "${env.WORKSPACE}"
+            PATH = "${env.GOPATH}/bin:${env.PATH}"
+          }
+          stages {
+            stage('Setup') { steps { dir(env.STATUS_GO_PATH) {
+              sh 'echo $WORKSPACE'
+              sh 'echo $GOPATH'
+              sh 'pwd'
+              sh 'make setup'
+            } } }
+            stage('Lint/Test') { steps { dir(env.STATUS_GO_PATH) {
+              sh 'make ci'
+            } } }
+            stage('Cross-compile') { steps { dir(env.STATUS_GO_PATH) {
+              sh 'go get github.com/status-im/xgo'
+              sh 'make statusgo-android'
+            } } }
+          }
+        }
+        stage('MacOS') {
+          agent { label 'macos' }
+          environment {
+            GOPATH = "${env.WORKSPACE}"
+            PATH = "${env.GOPATH}/bin:${env.PATH}"
+          }
+          stages {
+            stage('Setup') { steps { dir(env.STATUS_GO_PATH) {
+              sh 'pwd'
+              sh 'make setup'
+            } } }
+            stage('Cross-compile') { steps { dir(env.STATUS_GO_PATH) {
+              sh 'go get github.com/status-im/xgo'
+              sh 'make statusgo-ios-simulator'
+              dir('build/bin/statusgo-ios-9.3-framework') {
+                sh 'zip -r status-go-ios.zip Statusgo.framework'
+              }
+            } } }
+          }
+        }
+      }
     }
-
     stage('Deploy') {
-        // For branch builds, replace the old artifact. For develop keep all of them.
-        def version = gitBranch == 'develop' ? getVersion(gitBranch, gitShortSHA, '') : getVersion(gitBranch, gitShortSHA, env.BUILD_ID)
-        def server = Artifactory.server 'artifactory'
-        def uploadSpec = """{
-            "files": [
-                {
-                    "pattern": "build/bin/statusgo-android-16.aar",
-                    "target": "libs-release-local/status-im/status-go/${version}/status-go-${version}.aar"
-                },
-                {
-                    "pattern": "build/bin/statusgo-ios-9.3-framework/status-go-ios.zip",
-                    "target": "libs-release-local/status-im/status-go-ios-simulator/${version}/status-go-ios-simulator-${version}.zip"
-                }
-            ]
-        }"""
-
-        def buildInfo = Artifactory.newBuildInfo()
-        buildInfo.env.capture = false
-        buildInfo.name = 'status-go (' + gitBranch + '-' + gitShortSHA + ')'
-        server.upload(uploadSpec, buildInfo)
-        server.publishBuildInfo(buildInfo)
+      steps { script {
+        lib.deployToArtifactory()
+      } }
     }
+  }
 }
