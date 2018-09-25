@@ -76,10 +76,11 @@ node('linux') {
                 dir(cloneDir) {
                     sh """
                         make statusgo-linux
-                        cd build/lib/
+                        mkdir -p build/lib/linux
+                        cd build/lib/linux
                         mkdir -p include lib
-                        mv statusgo-linux-amd64.a lib/libstatus.a
-                        mv statusgo-linux-amd64.h include/libstatus.h
+                        mv ../statusgo-linux-amd64.a lib/libstatus.a
+                        mv ../statusgo-linux-amd64.h include/libstatus.h
                         zip status-go-linux-${version}.zip lib/* include/*
                     """
                 }
@@ -88,10 +89,11 @@ node('linux') {
                 dir(cloneDir) {
                     sh """
                         make statusgo-macos
-                        cd build/lib/
+                        mkdir -p build/lib/darwin
+                        cd build/lib/darwin
                         mkdir -p include lib
-                        mv statusgo-darwin-10.6-amd64.a lib/libstatus.a
-                        mv statusgo-darwin-10.6-amd64.h include/libstatus.h
+                        mv ../statusgo-darwin-10.6-amd64.a lib/libstatus.a
+                        mv ../statusgo-darwin-10.6-amd64.h include/libstatus.h
                         zip status-go-darwin-${version}.zip lib/* include/*
                     """
                 }
@@ -122,9 +124,9 @@ node('linux') {
             server.publishBuildInfo(buildInfo)
 
             androidArtifactUrl = cmn.uploadArtifact("build/lib/status-go-${version}.aar")
-            linuxArtifactUrl = cmn.uploadArtifact("build/lib/status-go-linux-${version}.zip")
+            linuxArtifactUrl = cmn.uploadArtifact("build/lib/linux/status-go-linux-${version}.zip")
             iosArtifactUrl = cmn.uploadArtifact("build/lib/status-go-ios-simulator-${version}.zip")
-            macosArtifactUrl = cmn.uploadArtifact("build/lib/status-go-darwin-${version}.zip")
+            macosArtifactUrl = cmn.uploadArtifact("build/lib/darwin/status-go-darwin-${version}.zip")
         }
     }
 }
