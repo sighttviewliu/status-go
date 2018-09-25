@@ -100,9 +100,31 @@ node('linux') {
     }
 
     stage('Deploy') {
-        androidArtifactUrl = cmn.uploadArtifact("build/lib/status-go-${version}.aar")
-        linuxArtifactUrl = cmn.uploadArtifact("build/lib/status-go-linux-${version}.zip")
-        iosArtifactUrl = cmn.uploadArtifact("build/lib/status-go-ios-simulator-${version}.zip")
-        macosArtifactUrl = cmn.uploadArtifact("build/lib/status-go-darwin-${version}.zip")
+        dir(cloneDir) {
+            def server = Artifactory.server 'artifacts'
+            def uploadSpec = """{
+                "files": [
+                    {
+                        "pattern": "build/lib/statusgo-android-16.aar",
+                        "target": "libs-release-local/status-im/status-go/${version}/status-go-${version}.aar"
+                    },
+                    {
+                        "pattern": "build/lib/statusgo-ios-9.3-framework/status-go-ios.zip",
+                        "target": "libs-release-local/status-im/status-go-ios-simulator/${version}/status-go-ios-simulator-${version}.zip"
+                    }
+                ]
+            }"""
+
+            def buildInfo = Artifactory.newBuildInfo()
+            buildInfo.env.capture = false
+            buildInfo.name = 'status-go (' + gitBranch + '-' + gitShortSHA + ')'
+            server.upload(uploadSpec, buildInfo)
+            server.publishBuildInfo(buildInfo)
+
+            androidArtifactUrl = cmn.uploadArtifact("build/lib/status-go-${version}.aar")
+            linuxArtifactUrl = cmn.uploadArtifact("build/lib/status-go-linux-${version}.zip")
+            iosArtifactUrl = cmn.uploadArtifact("build/lib/status-go-ios-simulator-${version}.zip")
+            macosArtifactUrl = cmn.uploadArtifact("build/lib/status-go-darwin-${version}.zip")
+        }
     }
 }
